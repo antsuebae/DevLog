@@ -1,0 +1,21 @@
+{
+  "project": "DevLog",
+  "branch": "main",
+  "updated_at": "2026-05-24T14:00:00Z",
+  "summary": "Proyecto completado: time tracker, git integration, report, standup, context saver, TUI dashboard, shell-init, cross-platform support, devlog log, devlog edit con IDs, aviso de sesión olvidada. UX pulido con colores ANSI. Clippy limpio.",
+  "decisions": [
+    { "what": "Todo el código en un único main.rs", "why": "Fiabilidad y simplicidad para un proyecto de aprendizaje sin módulos complejos" },
+    { "what": "ASCII bars en lugar de ratatui BarChart", "why": "La API de BarChart es compleja y cambia entre versiones; Paragraph con bloques █ es más simple y el resultado visual es equivalente" },
+    { "what": "shell-init es opcional y documentado, no automático", "why": "Limitación fundamental del SO: un proceso hijo no puede modificar el entorno del padre" },
+    { "what": "Auto-guardar contexto al hacer stop", "why": "El usuario no debería tener que recordar hacer devlog save manualmente" },
+    { "what": ".devlog.json vive en el repo y se commitea", "why": "El equipo comparte el mismo estado del proyecto; es útil para sesiones de IA" }
+  ],
+  "discarded": [
+    { "what": "Hito 5 — daemon de tracking automático", "why": "Detectar el proyecto activo sin shell integration es demasiado frágil" },
+    { "what": "ratatui BarChart widget", "why": "API compleja y sensible a versiones; reemplazado por Paragraph con bloques Unicode" },
+    { "what": "Indicador de sesión en el título de pestaña como solución principal", "why": "Los prompt frameworks (Starship, oh-my-posh) sobreescriben el título en cada prompt" }
+  ],
+  "pending": [],
+  "blockers": [],
+  "notes": "Proyecto listo para CV y GitHub. README completo, repo público con descripción y topics. CV actualizado con DevLog y Rust. Post de LinkedIn redactado."
+}
