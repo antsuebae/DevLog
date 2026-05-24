@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Datelike, Duration, Local, Utc};
+use chrono::{DateTime, Datelike, Duration, Local, Timelike, Utc};
 use std::collections::HashMap;
 use std::fs;
 use std::io;
@@ -46,6 +46,22 @@ enum Commands {
     Restore,
     /// Open the interactive TUI dashboard
     Dashboard,
+    /// Print shell integration snippet (eval "$(devlog shell-init)")
+    ShellInit,
+    /// Show full session history
+    Log,
+    /// Edit a session (defaults to last)
+    Edit {
+        /// Session ID from 'devlog log' (omit to edit last session)
+        #[arg(value_name = "ID")]
+        id: Option<usize>,
+        /// Set end time as HH:MM (local time)
+        #[arg(long, value_name = "HH:MM")]
+        end: Option<String>,
+        /// Set duration in minutes
+        #[arg(long, value_name = "MINUTES", conflicts_with = "end")]
+        duration: Option<i64>,
+    },
 }
 
 // ── Data Structures ──────────────────────────────────────────────────────────
@@ -122,6 +138,10 @@ fn bold(s: &str) -> String   { format!("\x1b[1m{}\x1b[0m", s) }
 fn green(s: &str) -> String  { format!("\x1b[32m{}\x1b[0m", s) }
 fn gray(s: &str) -> String   { format!("\x1b[90m{}\x1b[0m", s) }
 fn yellow(s: &str) -> String { format!("\x1b[33m{}\x1b[0m", s) }
+
+fn set_terminal_title(title: &str) {
+    print!("\x1b]0;{}\x07", title);
+}
 
 fn fmt_duration(mins: i64) -> String {
     if mins < 60 {
@@ -210,7 +230,7 @@ fn get_recent_commands(n: usize) -> Vec<String> {
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .map(|l| {
             if l.starts_with(": ") {
-                l.splitn(2, ';').nth(1).unwrap_or(l).to_string()
+                l.split_once(';').map(|x| x.1).unwrap_or(l).to_string()
             } else {
                 l.to_string()
             }
@@ -248,14 +268,13 @@ fn dashboard_loop(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::
     loop {
         terminal.draw(draw_ui)?;
 
-        if event::poll(std::time::Duration::from_secs(5))? {
-            if let Event::Key(key) = event::read()? {
-                match (key.code, key.modifiers) {
-                    (KeyCode::Char('q'), _)
-                    | (KeyCode::Char('Q'), _)
-                    | (KeyCode::Char('c'), KeyModifiers::CONTROL) => break,
-                    _ => {}
-                }
+        if event::poll(std::time::Duration::from_secs(5))?
+            && let Event::Key(key) = event::read()? {
+            match (key.code, key.modifiers) {
+                (KeyCode::Char('q'), _)
+                | (KeyCode::Char('Q'), _)
+                | (KeyCode::Char('c'), KeyModifiers::CONTROL) => break,
+                _ => {}
             }
         }
     }
@@ -343,7 +362,7 @@ fn draw_ui(f: &mut Frame) {
         }
     }
     let mut weekly: Vec<(String, u64)> = by_project.into_iter().collect();
-    weekly.sort_by(|a, b| b.1.cmp(&a.1));
+    weekly.sort_by_key(|b| std::cmp::Reverse(b.1));
     let max_w = weekly.iter().map(|(_, m)| *m).max().unwrap_or(1);
 
     let weekly_lines: Vec<Line> = weekly.iter().take(7).map(|(name, mins)| {
@@ -375,7 +394,7 @@ fn draw_ui(f: &mut Frame) {
                 let start: DateTime<Utc> = s.start_time.parse().unwrap_or_else(|_| Utc::now());
                 start.with_timezone(&Local).date_naive() == day && s.end_time.is_some()
             })
-            .map(|s| session_minutes(s))
+            .map(session_minutes)
             .sum();
         let weekday = day.weekday().num_days_from_monday() as usize;
         (day_names[weekday % 7].to_string(), mins as u64)
@@ -447,6 +466,18 @@ fn draw_ui(f: &mut Frame) {
 
 fn main() {
     fs::create_dir_all(data_dir()).unwrap();
+
+    if let Ok(content) = fs::read_to_string(current_path())
+        && let Ok(session) = serde_json::from_str::<Session>(&content) {
+        let start: DateTime<Utc> = session.start_time.parse().unwrap_or_else(|_| Utc::now());
+        let hours = (Utc::now() - start).num_hours();
+        if hours >= 8 {
+            println!("{} Session in {} has been running for {}h — did you forget to stop it?",
+                yellow("⚠"), cyan(&session.project), hours);
+            println!();
+        }
+    }
+
     let cli = Cli::parse();
 
     match cli.command {
@@ -476,6 +507,7 @@ fn main() {
             };
 
             fs::write(&path, serde_json::to_string_pretty(&session).unwrap()).unwrap();
+            set_terminal_title(&format!("● devlog — {}", project));
             println!("{} {} {}", green("●"), bold("Session started"), cyan(&project));
             println!("  {} {}", gray("branch:"), current_branch());
         }
@@ -516,6 +548,7 @@ fn main() {
             };
             fs::write(context_path(), serde_json::to_string_pretty(&context).unwrap()).unwrap();
 
+            set_terminal_title("");
             println!("{} {} {}", yellow("■"), bold("Session closed"), cyan(&session.project));
             println!("  {} {}   {} {}",
                 gray("time:"), fmt_duration(elapsed.num_minutes()),
@@ -573,7 +606,7 @@ fn main() {
             }
 
             let mut entries: Vec<(String, i64)> = by_project.into_iter().collect();
-            entries.sort_by(|a, b| b.1.cmp(&a.1));
+            entries.sort_by_key(|b| std::cmp::Reverse(b.1));
             let total: i64 = entries.iter().map(|(_, m)| m).sum();
 
             println!("{}", bold("── Weekly Report ─────────────────────"));
@@ -720,6 +753,131 @@ fn main() {
         Commands::Dashboard => {
             if let Err(e) = run_dashboard() {
                 eprintln!("Dashboard error: {}", e);
+            }
+        }
+
+        Commands::Log => {
+            let history = load_history();
+            if history.is_empty() {
+                println!("No sessions recorded.");
+                return;
+            }
+
+            let total = history.len();
+            let mut current_date = String::new();
+
+            for (i, s) in history.iter().enumerate().rev() {
+                let id = i + 1;
+                let start: DateTime<Utc> = s.start_time.parse().unwrap_or_else(|_| Utc::now());
+                let local = start.with_timezone(&Local);
+                let date = local.format("%Y-%m-%d  %A").to_string();
+
+                if date != current_date {
+                    if !current_date.is_empty() { println!(); }
+                    println!("{}", bold(&date));
+                    current_date = date;
+                }
+
+                let duration = if s.end_time.is_some() {
+                    fmt_duration(session_minutes(s))
+                } else {
+                    yellow("in progress")
+                };
+
+                println!("  {}  {}  {:<20}  {}  {} commit(s)",
+                    gray(&format!("#{}", id)),
+                    gray(&local.format("%H:%M").to_string()),
+                    cyan(&s.project),
+                    duration,
+                    s.commits.len(),
+                );
+            }
+
+            println!();
+            println!("{} session(s) total", gray(&total.to_string()));
+        }
+
+        Commands::Edit { id, end, duration } => {
+            let mut history = load_history();
+            if history.is_empty() {
+                println!("No sessions to edit.");
+                return;
+            }
+
+            let idx = if let Some(id) = id {
+                if id == 0 || id > history.len() {
+                    println!("Invalid ID. Run 'devlog log' to see available sessions.");
+                    return;
+                }
+                id - 1
+            } else {
+                history.len() - 1
+            };
+
+            if end.is_none() && duration.is_none() {
+                let s = &history[idx];
+                let start: DateTime<Utc> = s.start_time.parse().unwrap_or_else(|_| Utc::now());
+                println!("{}", bold(&format!("Session #{}:", idx + 1)));
+                println!("  {} {}", gray("project:"), cyan(&s.project));
+                println!("  {} {}", gray("start:"), start.with_timezone(&Local).format("%Y-%m-%d %H:%M"));
+                if let Some(e) = &s.end_time {
+                    let end_dt: DateTime<Utc> = e.parse().unwrap_or_else(|_| Utc::now());
+                    println!("  {} {}", gray("end:"), end_dt.with_timezone(&Local).format("%Y-%m-%d %H:%M"));
+                    println!("  {} {}", gray("duration:"), fmt_duration(session_minutes(s)));
+                }
+                println!();
+                println!("Usage:");
+                println!("  devlog edit [ID] --end HH:MM      set end time (today, local)");
+                println!("  devlog edit [ID] --duration MINS  set duration in minutes");
+                return;
+            }
+
+            {
+                let s = &mut history[idx];
+                let start: DateTime<Utc> = s.start_time.parse().unwrap_or_else(|_| Utc::now());
+
+                if let Some(end_str) = &end {
+                    let parts: Vec<&str> = end_str.split(':').collect();
+                    if parts.len() != 2 {
+                        println!("Invalid format. Use --end HH:MM");
+                        return;
+                    }
+                    let h: u32 = parts[0].parse().unwrap_or(0);
+                    let m: u32 = parts[1].parse().unwrap_or(0);
+                    let new_end = Local::now()
+                        .with_hour(h).unwrap()
+                        .with_minute(m).unwrap()
+                        .with_second(0).unwrap();
+                    s.end_time = Some(new_end.with_timezone(&Utc).to_rfc3339());
+                }
+
+                if let Some(mins) = duration {
+                    let new_end = start + Duration::minutes(mins);
+                    s.end_time = Some(new_end.to_rfc3339());
+                }
+            }
+
+            save_history(&history);
+            println!("{} Session #{} updated — {}", green("✔"), idx + 1, fmt_duration(session_minutes(&history[idx])));
+        }
+
+        Commands::ShellInit => {
+            let shell = std::env::var("SHELL").unwrap_or_default();
+            if shell.contains("zsh") {
+                println!(r#"
+_devlog_indicator() {{
+  [ -f "$HOME/.local/share/devlog/current.json" ] && echo -n " %F{{green}}●%f devlog"
+}}
+setopt PROMPT_SUBST
+PROMPT="${{PROMPT}}\$(_devlog_indicator)"
+"#);
+            } else {
+                println!(r#"
+_devlog_indicator() {{
+  [ -f "$HOME/.local/share/devlog/current.json" ] && printf " \033[32m●\033[0m devlog"
+}}
+PS1="${{PS1}}\$(_devlog_indicator) "
+"#);
             }
         }
     }

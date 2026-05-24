@@ -106,6 +106,22 @@ Opens an interactive TUI showing the active session, time per project this week,
 
 ---
 
+### Shell prompt integration (optional)
+
+`devlog shell-init` prints a shell snippet that adds a `● devlog` indicator to your prompt when a session is active.
+
+```bash
+# bash (~/.bashrc)
+eval "$(devlog shell-init)"
+
+# zsh (~/.zshrc)
+eval "$(devlog shell-init)"
+```
+
+> **Note:** This may not work with prompt frameworks like Starship or oh-my-posh, which manage the terminal title and prompt independently. In those cases, check session status with `devlog status`.
+
+---
+
 ## Data storage
 
 All data is stored locally in `~/.local/share/devlog/`:
