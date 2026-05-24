@@ -2,7 +2,7 @@
 
 A terminal tool that automates the daily workflow of a developer: tracks time per project, captures git commits, generates stand-up messages, and remembers where you left off.
 
-Built in Rust as a learning project.
+Built in Rust.
 
 ---
 
@@ -28,7 +28,7 @@ Built in Rust as a learning project.
 ## Installation
 
 ```bash
-git clone https://github.com/antsuebae/devlog
+git clone https://github.com/antsuebae/DevLog
 cd devlog
 cargo install --path .
 ```
@@ -103,6 +103,25 @@ devlog dashboard
 ```
 
 Opens an interactive TUI showing the active session, time per project this week, daily activity bars, and recent session history. Press `q` to exit.
+
+### Session history
+
+```bash
+devlog log
+```
+
+Shows all recorded sessions grouped by date, with ID, time, project, duration and commit count.
+
+### Edit a session
+
+```bash
+devlog edit            # shows last session
+devlog edit 3          # shows session #3
+devlog edit 3 --end 18:30       # set end time (today, local)
+devlog edit 3 --duration 90     # set duration in minutes
+```
+
+Useful when you forgot to stop a session and need to correct the recorded time.
 
 ---
 
