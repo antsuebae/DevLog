@@ -62,6 +62,13 @@ enum Commands {
         #[arg(long, value_name = "MINUTES", conflicts_with = "end")]
         duration: Option<i64>,
     },
+    /// Rename a project across all history
+    Rename {
+        /// Current project name
+        old: String,
+        /// New project name
+        new: String,
+    },
 }
 
 // ── Data Structures ──────────────────────────────────────────────────────────
@@ -365,11 +372,11 @@ fn draw_ui(f: &mut Frame) {
     weekly.sort_by_key(|b| std::cmp::Reverse(b.1));
     let max_w = weekly.iter().map(|(_, m)| *m).max().unwrap_or(1);
 
+    let name_col = weekly.iter().map(|(n, _)| n.len()).max().unwrap_or(10).max(10);
     let weekly_lines: Vec<Line> = weekly.iter().take(7).map(|(name, mins)| {
         let bar = ascii_bar(*mins, max_w, 14);
-        let name_trimmed = if name.len() > 10 { &name[..10] } else { name.as_str() };
         Line::from(Span::styled(
-            format!("  {:<10} {} {:2}h{:02}m", name_trimmed, bar, mins / 60, mins % 60),
+            format!("  {:<width$} {} {:2}h{:02}m", name, bar, mins / 60, mins % 60, width = name_col),
             Style::default().fg(Color::Cyan),
         ))
     }).collect();
@@ -492,12 +499,29 @@ fn main() {
                 }
             }
 
-            let project = std::env::current_dir()
-                .unwrap()
-                .file_name()
-                .unwrap()
-                .to_string_lossy()
-                .to_string();
+            let project = std::process::Command::new("git")
+                .args(["remote", "get-url", "origin"])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .map(|url| {
+                    url.trim()
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or("")
+                        .trim_end_matches(".git")
+                        .to_string()
+                })
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| {
+                    std::env::current_dir()
+                        .unwrap()
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .to_string()
+                });
 
             let session = Session {
                 project: project.clone(),
@@ -859,6 +883,23 @@ fn main() {
 
             save_history(&history);
             println!("{} Session #{} updated — {}", green("✔"), idx + 1, fmt_duration(session_minutes(&history[idx])));
+        }
+
+        Commands::Rename { old, new } => {
+            let history_path = data_dir().join("history.json");
+            let mut history = load_history();
+            let count = history.iter().filter(|s| s.project == old).count();
+            if count == 0 {
+                println!("{} No sessions found for project '{}'", yellow("⚠"), old);
+                return;
+            }
+            for session in history.iter_mut() {
+                if session.project == old {
+                    session.project = new.clone();
+                }
+            }
+            fs::write(&history_path, serde_json::to_string_pretty(&history).unwrap()).unwrap();
+            println!("{} Renamed '{}' → '{}' in {} session(s)", green("✔"), old, new, count);
         }
 
         Commands::ShellInit => {
