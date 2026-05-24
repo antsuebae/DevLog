@@ -14,6 +14,7 @@ Built in Rust.
 - **Stand-up generator** — formats yesterday/today/blockers ready to paste
 - **Context saver** — snapshots your branch, modified files, and a note so you can pick up exactly where you left off
 - **TUI dashboard** — interactive terminal UI with bar charts and session history
+- **Claude Code skill** — maintains project context between AI sessions via `.devlog.json`
 
 ---
 
@@ -146,6 +147,34 @@ eval "$(devlog shell-init)"
 ```
 
 > **Note:** This may not work with prompt frameworks like Starship or oh-my-posh, which manage the terminal title and prompt independently. In those cases, check session status with `devlog status`.
+
+---
+
+## Claude Code integration
+
+DevLog includes a [Claude Code](https://claude.ai/code) skill that maintains project context between AI sessions. Instead of re-explaining the project at the start of every conversation, the skill reads and writes a `.devlog.json` file in the project root.
+
+### Setup
+
+Copy the skill to your Claude Code skills directory:
+
+```bash
+cp -r skills/devlog ~/.claude/skills/devlog
+```
+
+### Usage
+
+At the start of any session, invoke the skill:
+
+```
+/devlog
+```
+
+Claude will read `.devlog.json` and present a summary of the last session: what was done, pending tasks, decisions, and blockers. At the end of the session it writes the updated context back to the file.
+
+On first run in a project with no `.devlog.json`, the skill bootstraps the file automatically by reading the README, recent commits, and git status.
+
+The `.devlog.json` file is meant to be committed — it works as shared context for any AI session on the project.
 
 ---
 
