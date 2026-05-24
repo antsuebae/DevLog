@@ -123,6 +123,14 @@ devlog edit 3 --duration 90     # set duration in minutes
 
 Useful when you forgot to stop a session and need to correct the recorded time.
 
+### Rename a project
+
+```bash
+devlog rename old-name new-name
+```
+
+Renames a project across all recorded sessions. Useful when the project name changed or was recorded from the folder name instead of the repository name.
+
 ---
 
 ### Shell prompt integration (optional)
